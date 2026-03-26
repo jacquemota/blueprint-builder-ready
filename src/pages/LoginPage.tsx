@@ -30,12 +30,14 @@ const LoginPage = () => {
 
   return (
     <div className="flex min-h-screen">
-      {/* Left panel */}
-      <div className="hidden w-1/2 items-center justify-center bg-primary lg:flex">
+      {/* Left panel with gradient */}
+      <div className="hidden w-1/2 items-center justify-center gradient-hero lg:flex">
         <div className="max-w-md text-center text-primary-foreground">
-          <Heart className="mx-auto h-16 w-16 mb-6" />
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl gradient-primary">
+            <Heart className="h-8 w-8" />
+          </div>
           <h2 className="text-3xl font-bold">Mais que Social</h2>
-          <p className="mt-4 text-primary-foreground/80">
+          <p className="mt-4 text-primary-foreground/70">
             Sistema de gestão para transformar vidas através do cuidado e da organização social.
           </p>
         </div>
@@ -46,7 +48,7 @@ const LoginPage = () => {
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center lg:text-left">
             <div className="mb-4 flex items-center justify-center gap-2 lg:justify-start">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg gradient-primary">
                 <Heart className="h-5 w-5 text-primary-foreground" />
               </div>
               <span className="text-lg font-bold text-foreground lg:hidden">Mais que Social</span>
@@ -81,7 +83,7 @@ const LoginPage = () => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

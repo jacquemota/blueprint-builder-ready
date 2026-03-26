@@ -1,12 +1,48 @@
-import { Users, ClipboardList, Package, UsersRound } from 'lucide-react';
-import { StatsCard } from '@/components/StatsCard';
-import { PageHeader } from '@/components/PageHeader';
+import { Link } from 'react-router-dom';
+import { Users, HeartHandshake, Package, UsersRound, ArrowUpRight, TrendingUp } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import { familiasMock, atendimentosMock, cestasMock, atividadesMock } from '@/data/mockData';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line,
+} from 'recharts';
+import { motion } from 'framer-motion';
 
-const COLORS = ['hsl(168,60%,38%)', 'hsl(35,90%,55%)', 'hsl(205,80%,50%)', 'hsl(142,70%,45%)', 'hsl(0,72%,51%)'];
+const CHART_COLORS = [
+  'hsl(174, 60%, 40%)',
+  'hsl(30, 80%, 55%)',
+  'hsl(210, 70%, 55%)',
+  'hsl(152, 60%, 42%)',
+  'hsl(0, 72%, 51%)',
+];
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 12 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.08, duration: 0.4 },
+  }),
+};
+
+const statCards = [
+  { label: 'Famílias Cadastradas', icon: Users, path: '/familias', color: 'primary' },
+  { label: 'Atendimentos', icon: HeartHandshake, path: '/atendimentos', color: 'info' },
+  { label: 'Cestas Entregues', icon: Package, path: '/cestas', color: 'warning' },
+  { label: 'Atividades', icon: UsersRound, path: '/grupos', color: 'success' },
+];
 
 const DashboardPage = () => {
+  const { user } = useAuth();
+  const firstName = user?.nome.split(' ')[0] || 'Usuário';
+
+  const values = [
+    familiasMock.length,
+    atendimentosMock.length,
+    cestasMock.reduce((s, c) => s + c.quantidade, 0),
+    atividadesMock.length,
+  ];
+
   // Famílias por bairro
   const bairroData = familiasMock.reduce<Record<string, number>>((acc, f) => {
     acc[f.bairro] = (acc[f.bairro] || 0) + 1;
@@ -32,56 +68,100 @@ const DashboardPage = () => {
     value,
   }));
 
-  return (
-    <div>
-      <PageHeader title="Dashboard" description="Visão geral das atividades da ONG Mais que Social" />
+  const colorMap: Record<string, string> = {
+    primary: 'bg-primary/10 text-primary',
+    info: 'bg-info/10 text-info',
+    warning: 'bg-warning/10 text-warning',
+    success: 'bg-success/10 text-success',
+  };
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard title="Famílias Cadastradas" value={familiasMock.length} icon={Users} />
-        <StatsCard title="Atendimentos" value={atendimentosMock.length} icon={ClipboardList} />
-        <StatsCard title="Cestas Entregues" value={cestasMock.reduce((s, c) => s + c.quantidade, 0)} icon={Package} />
-        <StatsCard title="Atividades" value={atividadesMock.length} icon={UsersRound} />
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Olá, {firstName}! 👋</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Visão geral das atividades da ONG Mais que Social</p>
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+      {/* Stat cards */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        {statCards.map((card, i) => (
+          <motion.div
+            key={card.path}
+            initial="hidden"
+            animate="visible"
+            custom={i}
+            variants={fadeUp}
+          >
+            <Link
+              to={card.path}
+              className="block glass-elevated rounded-xl p-5 hover:shadow-lg transition-all group"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className={`p-2.5 rounded-lg ${colorMap[card.color]?.split(' ')[0]}`}>
+                  <card.icon className={`w-5 h-5 ${colorMap[card.color]?.split(' ')[1]}`} />
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+              <div className="text-3xl font-bold text-foreground">{values[i]}</div>
+              <div className="text-sm text-muted-foreground">{card.label}</div>
+            </Link>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Charts */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
         {/* Famílias por Bairro */}
-        <div className="rounded-xl border bg-card p-6 shadow-card">
-          <h3 className="mb-4 text-sm font-semibold text-card-foreground">Famílias por Bairro</h3>
+        <div className="glass-card p-6">
+          <h3 className="mb-4 font-semibold text-card-foreground">Famílias por Bairro</h3>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={bairroChart}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(160,15%,88%)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(200,15%,90%)" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
-              <Bar dataKey="value" fill="hsl(168,60%,38%)" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="value" fill={CHART_COLORS[0]} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         {/* Tipos de Atendimento */}
-        <div className="rounded-xl border bg-card p-6 shadow-card">
-          <h3 className="mb-4 text-sm font-semibold text-card-foreground">Tipos de Atendimento</h3>
+        <div className="glass-card p-6">
+          <h3 className="mb-4 font-semibold text-card-foreground">Tipos de Atendimento</h3>
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>
-              <Pie data={tipoChart} cx="50%" cy="50%" innerRadius={50} outerRadius={90} dataKey="value" label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
-                {tipoChart.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              <Pie
+                data={tipoChart}
+                cx="50%"
+                cy="50%"
+                innerRadius={50}
+                outerRadius={90}
+                dataKey="value"
+                label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+              >
+                {tipoChart.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
               </Pie>
               <Tooltip />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Cestas ao longo do tempo */}
-        <div className="rounded-xl border bg-card p-6 shadow-card lg:col-span-2">
-          <h3 className="mb-4 text-sm font-semibold text-card-foreground">Cestas Básicas Distribuídas por Mês</h3>
+        {/* Cestas por Mês — span 2 colunas */}
+        <div className="glass-card p-6 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="font-semibold text-card-foreground">Cestas Básicas Distribuídas por Mês</h3>
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+          </div>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={cestasChart}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(160,15%,88%)" />
+            <LineChart data={cestasChart}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(200,15%,90%)" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
-              <Bar dataKey="value" fill="hsl(35,90%,55%)" radius={[6, 6, 0, 0]} />
-            </BarChart>
+              <Line type="monotone" dataKey="value" stroke={CHART_COLORS[1]} strokeWidth={2} dot={{ r: 4 }} />
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
