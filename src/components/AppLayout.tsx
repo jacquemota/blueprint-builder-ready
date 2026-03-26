@@ -3,9 +3,9 @@ import { AppSidebar } from './AppSidebar';
 
 export const AppLayout = () => {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background">
       <AppSidebar />
-      <main className="ml-64 min-h-screen p-6 transition-all duration-300">
+      <main className="flex-1 p-4 lg:p-8 pt-16 lg:pt-8 overflow-auto">
         <Outlet />
       </main>
     </div>
