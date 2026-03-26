@@ -35,7 +35,7 @@ export const AppSidebar = () => {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const isMobile = useIsMobile();
+  const isMobile = useMediaQuery(1024);
 
   const allItems = isAdmin ? [...navItems, ...adminItems] : navItems;
 

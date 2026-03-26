@@ -17,3 +17,17 @@ export function useIsMobile() {
 
   return !!isMobile;
 }
+
+export function useMediaQuery(breakpoint: number) {
+  const [matches, setMatches] = React.useState(false);
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const onChange = () => setMatches(window.innerWidth < breakpoint);
+    mql.addEventListener("change", onChange);
+    onChange();
+    return () => mql.removeEventListener("change", onChange);
+  }, [breakpoint]);
+
+  return matches;
+}
