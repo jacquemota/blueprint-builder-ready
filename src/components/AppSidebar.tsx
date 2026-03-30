@@ -90,7 +90,7 @@ export const AppSidebar = () => {
         {(!collapsed || isMobile) && user && (
           <div className="mb-2 px-2">
             <p className="text-xs font-semibold text-sidebar-foreground truncate">{user.nome}</p>
-            <p className="text-xs text-sidebar-foreground/60 truncate">{user.cargo}</p>
+            <p className="text-xs text-sidebar-foreground/60 truncate">{user.role}</p>
           </div>
         )}
         <button
