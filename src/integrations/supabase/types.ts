@@ -14,16 +14,360 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      atendimentos: {
+        Row: {
+          created_at: string
+          data_atendimento: string
+          familia_id: string
+          id: string
+          observacoes: string | null
+          profissional_id: string
+          tipo_atendimento: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data_atendimento: string
+          familia_id: string
+          id?: string
+          observacoes?: string | null
+          profissional_id: string
+          tipo_atendimento: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data_atendimento?: string
+          familia_id?: string
+          id?: string
+          observacoes?: string | null
+          profissional_id?: string
+          tipo_atendimento?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "atendimentos_familia_id_fkey"
+            columns: ["familia_id"]
+            isOneToOne: false
+            referencedRelation: "familias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      atividades: {
+        Row: {
+          created_at: string
+          data_atividade: string
+          descricao: string | null
+          id: string
+          nome: string
+          responsavel_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data_atividade: string
+          descricao?: string | null
+          id?: string
+          nome: string
+          responsavel_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data_atividade?: string
+          descricao?: string | null
+          id?: string
+          nome?: string
+          responsavel_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      entregas_cestas: {
+        Row: {
+          created_at: string
+          data_entrega: string
+          familia_id: string
+          id: string
+          observacoes: string | null
+          quantidade: number
+          registrado_por: string | null
+        }
+        Insert: {
+          created_at?: string
+          data_entrega: string
+          familia_id: string
+          id?: string
+          observacoes?: string | null
+          quantidade?: number
+          registrado_por?: string | null
+        }
+        Update: {
+          created_at?: string
+          data_entrega?: string
+          familia_id?: string
+          id?: string
+          observacoes?: string | null
+          quantidade?: number
+          registrado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entregas_cestas_familia_id_fkey"
+            columns: ["familia_id"]
+            isOneToOne: false
+            referencedRelation: "familias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      familias: {
+        Row: {
+          ativo: boolean
+          bairro: string
+          comunidade: string
+          cpf: string
+          created_at: string
+          data_nascimento_responsavel: string | null
+          endereco: string
+          id: string
+          num_criancas: number
+          num_idosos: number
+          num_moradores: number
+          observacoes: string | null
+          responsavel: string
+          situacao_social: string
+          telefone: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          bairro: string
+          comunidade?: string
+          cpf: string
+          created_at?: string
+          data_nascimento_responsavel?: string | null
+          endereco: string
+          id?: string
+          num_criancas?: number
+          num_idosos?: number
+          num_moradores?: number
+          observacoes?: string | null
+          responsavel: string
+          situacao_social?: string
+          telefone: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          bairro?: string
+          comunidade?: string
+          cpf?: string
+          created_at?: string
+          data_nascimento_responsavel?: string | null
+          endereco?: string
+          id?: string
+          num_criancas?: number
+          num_idosos?: number
+          num_moradores?: number
+          observacoes?: string | null
+          responsavel?: string
+          situacao_social?: string
+          telefone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      logs_auditoria: {
+        Row: {
+          acao: string
+          created_at: string
+          dados_anteriores: Json | null
+          dados_novos: Json | null
+          id: string
+          ip: string | null
+          registro_id: string | null
+          tabela: string
+          user_id: string | null
+        }
+        Insert: {
+          acao: string
+          created_at?: string
+          dados_anteriores?: Json | null
+          dados_novos?: Json | null
+          id?: string
+          ip?: string | null
+          registro_id?: string | null
+          tabela: string
+          user_id?: string | null
+        }
+        Update: {
+          acao?: string
+          created_at?: string
+          dados_anteriores?: Json | null
+          dados_novos?: Json | null
+          id?: string
+          ip?: string | null
+          registro_id?: string | null
+          tabela?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      membros_familia: {
+        Row: {
+          created_at: string
+          data_nascimento: string | null
+          familia_id: string
+          id: string
+          nome: string
+          parentesco: string
+        }
+        Insert: {
+          created_at?: string
+          data_nascimento?: string | null
+          familia_id: string
+          id?: string
+          nome: string
+          parentesco?: string
+        }
+        Update: {
+          created_at?: string
+          data_nascimento?: string | null
+          familia_id?: string
+          id?: string
+          nome?: string
+          parentesco?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membros_familia_familia_id_fkey"
+            columns: ["familia_id"]
+            isOneToOne: false
+            referencedRelation: "familias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      participantes_atividade: {
+        Row: {
+          atividade_id: string
+          created_at: string
+          familia_id: string | null
+          id: string
+          nome_participante: string
+        }
+        Insert: {
+          atividade_id: string
+          created_at?: string
+          familia_id?: string | null
+          id?: string
+          nome_participante: string
+        }
+        Update: {
+          atividade_id?: string
+          created_at?: string
+          familia_id?: string | null
+          id?: string
+          nome_participante?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "participantes_atividade_atividade_id_fkey"
+            columns: ["atividade_id"]
+            isOneToOne: false
+            referencedRelation: "atividades"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "participantes_atividade_familia_id_fkey"
+            columns: ["familia_id"]
+            isOneToOne: false
+            referencedRelation: "familias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          email: string
+          id: string
+          nome: string
+          telefone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          email: string
+          id?: string
+          nome: string
+          telefone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          email?: string
+          id?: string
+          nome?: string
+          telefone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_role: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "admin"
+        | "assistente_social"
+        | "atendimento"
+        | "consulta"
+        | "auditoria"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +494,14 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "admin",
+        "assistente_social",
+        "atendimento",
+        "consulta",
+        "auditoria",
+      ],
+    },
   },
 } as const
