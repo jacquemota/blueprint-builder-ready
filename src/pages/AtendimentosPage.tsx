@@ -1,53 +1,78 @@
-import { useState, useMemo } from 'react';
-import { atendimentosMock, familiasMock, funcionariosMock, tiposAtendimento } from '@/data/mockData';
+import { useState, useMemo, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { tiposAtendimento } from '@/types';
+import type { Atendimento, Familia, Profile } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Atendimento } from '@/types';
 
 const AtendimentosPage = () => {
-  const [atendimentos, setAtendimentos] = useState<Atendimento[]>(atendimentosMock);
+  const { user } = useAuth();
+  const [atendimentos, setAtendimentos] = useState<Atendimento[]>([]);
+  const [familias, setFamilias] = useState<Familia[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [filterTipo, setFilterTipo] = useState('all');
-  const [form, setForm] = useState({ familiaId: '', tipoAtendimento: '', profissionalId: '', dataAtendimento: '', observacoes: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({ familiaId: '', tipoAtendimento: '', dataAtendimento: '', observacoes: '' });
 
-  const getFamiliaNome = (id: string) => familiasMock.find(f => f.id === id)?.responsavel ?? id;
-  const getFuncNome = (id: string) => funcionariosMock.find(f => f.id === id)?.nome ?? id;
+  const fetchData = async () => {
+    const [atRes, famRes, profRes] = await Promise.all([
+      supabase.from('atendimentos').select('*').order('data_atendimento', { ascending: false }),
+      supabase.from('familias').select('id, responsavel'),
+      supabase.from('profiles').select('user_id, nome'),
+    ]);
+    setAtendimentos(atRes.data || []);
+    setFamilias(famRes.data as Familia[] || []);
+    setProfiles(profRes.data as Profile[] || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const getFamiliaNome = (id: string) => familias.find(f => f.id === id)?.responsavel ?? id;
+  const getProfNome = (id: string) => profiles.find(p => p.user_id === id)?.nome ?? id;
 
   const filtered = useMemo(() => {
     return atendimentos.filter(a => {
-      const matchSearch = !search || getFamiliaNome(a.familiaId).toLowerCase().includes(search.toLowerCase());
-      const matchTipo = filterTipo === 'all' || a.tipoAtendimento === filterTipo;
+      const matchSearch = !search || getFamiliaNome(a.familia_id).toLowerCase().includes(search.toLowerCase());
+      const matchTipo = filterTipo === 'all' || a.tipo_atendimento === filterTipo;
       return matchSearch && matchTipo;
     });
-  }, [atendimentos, search, filterTipo]);
+  }, [atendimentos, search, filterTipo, familias]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const novo: Atendimento = {
-      id: String(Date.now()),
-      familiaId: form.familiaId,
-      tipoAtendimento: form.tipoAtendimento as Atendimento['tipoAtendimento'],
-      profissionalId: form.profissionalId,
-      dataAtendimento: form.dataAtendimento,
+    if (!user) return;
+    setSubmitting(true);
+    const { error } = await supabase.from('atendimentos').insert({
+      familia_id: form.familiaId,
+      tipo_atendimento: form.tipoAtendimento,
+      profissional_id: user.id,
+      data_atendimento: form.dataAtendimento,
       observacoes: form.observacoes,
-      criadoEm: new Date().toISOString().split('T')[0],
-    };
-    setAtendimentos(prev => [novo, ...prev]);
-    setForm({ familiaId: '', tipoAtendimento: '', profissionalId: '', dataAtendimento: '', observacoes: '' });
-    setOpen(false);
+    });
+    if (error) { toast.error('Erro: ' + error.message); setSubmitting(false); return; }
     toast.success('Atendimento registrado com sucesso!');
+    setForm({ familiaId: '', tipoAtendimento: '', dataAtendimento: '', observacoes: '' });
+    setOpen(false);
+    setSubmitting(false);
+    fetchData();
   };
 
-  const handleDelete = (id: string) => {
-    setAtendimentos(prev => prev.filter(a => a.id !== id));
-    toast.success('Atendimento removido com sucesso!');
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('atendimentos').delete().eq('id', id);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    toast.success('Atendimento removido!');
+    fetchData();
   };
 
   const tipoBadge = (tipo: string) => {
@@ -59,6 +84,8 @@ const AtendimentosPage = () => {
     };
     return map[tipo] || 'bg-muted text-muted-foreground';
   };
+
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
     <div className="space-y-6">
@@ -78,7 +105,7 @@ const AtendimentosPage = () => {
                 <Label>Família *</Label>
                 <Select required value={form.familiaId} onValueChange={v => setForm({ ...form, familiaId: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione a família" /></SelectTrigger>
-                  <SelectContent>{familiasMock.map(f => <SelectItem key={f.id} value={f.id}>{f.responsavel}</SelectItem>)}</SelectContent>
+                  <SelectContent>{familias.map(f => <SelectItem key={f.id} value={f.id}>{f.responsavel}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
@@ -86,13 +113,6 @@ const AtendimentosPage = () => {
                 <Select required value={form.tipoAtendimento} onValueChange={v => setForm({ ...form, tipoAtendimento: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>{tiposAtendimento.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Profissional</Label>
-                <Select value={form.profissionalId} onValueChange={v => setForm({ ...form, profissionalId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{funcionariosMock.filter(f => f.ativo).map(f => <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
@@ -105,14 +125,16 @@ const AtendimentosPage = () => {
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-                <Button type="submit">Registrar</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Registrar
+                </Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -127,7 +149,6 @@ const AtendimentosPage = () => {
         </Select>
       </div>
 
-      {/* Table */}
       <div className="glass-card rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -146,15 +167,15 @@ const AtendimentosPage = () => {
                 <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Nenhum atendimento encontrado.</td></tr>
               ) : filtered.map(a => (
                 <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                  <td className="p-4 font-medium text-foreground">{getFamiliaNome(a.familiaId)}</td>
+                  <td className="p-4 font-medium text-foreground">{getFamiliaNome(a.familia_id)}</td>
                   <td className="p-4">
-                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${tipoBadge(a.tipoAtendimento)}`}>
-                      {a.tipoAtendimento}
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${tipoBadge(a.tipo_atendimento)}`}>
+                      {a.tipo_atendimento}
                     </span>
                   </td>
-                  <td className="p-4 text-muted-foreground hidden md:table-cell">{getFuncNome(a.profissionalId)}</td>
-                  <td className="p-4 text-muted-foreground">{a.dataAtendimento}</td>
-                  <td className="p-4 text-muted-foreground hidden lg:table-cell"><span className="max-w-[200px] truncate block">{a.observacoes}</span></td>
+                  <td className="p-4 text-muted-foreground hidden md:table-cell">{getProfNome(a.profissional_id)}</td>
+                  <td className="p-4 text-muted-foreground">{a.data_atendimento}</td>
+                  <td className="p-4 text-muted-foreground hidden lg:table-cell"><span className="max-w-[200px] truncate block">{a.observacoes || '—'}</span></td>
                   <td className="p-4 text-right">
                     <button onClick={() => handleDelete(a.id)} className="p-2 hover:bg-destructive/10 rounded-lg transition-colors">
                       <Trash2 className="h-4 w-4 text-destructive" />

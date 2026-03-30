@@ -1,27 +1,39 @@
-import { useState, useMemo } from 'react';
-import { familiasMock, bairrosMock, comunidadesMock, situacoesSociais } from '@/data/mockData';
+import { useState, useMemo, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { bairrosList, comunidadesMap, situacoesSociais } from '@/types';
+import type { Familia } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Eye, Trash2, Edit } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Edit, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Familia } from '@/types';
 
 const FamiliasPage = () => {
-  const [familias, setFamilias] = useState<Familia[]>(familiasMock);
+  const [familias, setFamilias] = useState<Familia[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [filterBairro, setFilterBairro] = useState('all');
   const [detailFamily, setDetailFamily] = useState<Familia | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const emptyForm = {
     responsavel: '', cpf: '', telefone: '', endereco: '', bairro: '', comunidade: '',
-    numMoradores: '', numCriancas: '', numIdosos: '', situacaoSocial: '',
+    numMoradores: '1', numCriancas: '0', numIdosos: '0', situacaoSocial: 'Estável',
   };
   const [form, setForm] = useState(emptyForm);
+
+  const fetchFamilias = async () => {
+    const { data, error } = await supabase.from('familias').select('*').order('created_at', { ascending: false });
+    if (error) { toast.error('Erro ao carregar famílias'); return; }
+    setFamilias(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchFamilias(); }, []);
 
   const filtered = useMemo(() => {
     return familias.filter(f => {
@@ -31,48 +43,55 @@ const FamiliasPage = () => {
     });
   }, [familias, search, filterBairro]);
 
-  const resetForm = () => {
-    setForm(emptyForm);
-    setEditingId(null);
-  };
+  const resetForm = () => { setForm(emptyForm); setEditingId(null); };
 
   const openEdit = (f: Familia) => {
     setForm({
       responsavel: f.responsavel, cpf: f.cpf, telefone: f.telefone, endereco: f.endereco,
       bairro: f.bairro, comunidade: f.comunidade,
-      numMoradores: String(f.numMoradores), numCriancas: String(f.numCriancas),
-      numIdosos: String(f.numIdosos), situacaoSocial: f.situacaoSocial,
+      numMoradores: String(f.num_moradores), numCriancas: String(f.num_criancas),
+      numIdosos: String(f.num_idosos), situacaoSocial: f.situacao_social,
     });
     setEditingId(f.id);
     setOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
+    const payload = {
+      responsavel: form.responsavel.trim(),
+      cpf: form.cpf.trim(),
+      telefone: form.telefone.trim(),
+      endereco: form.endereco.trim(),
+      bairro: form.bairro,
+      comunidade: form.comunidade,
+      num_moradores: Number(form.numMoradores),
+      num_criancas: Number(form.numCriancas),
+      num_idosos: Number(form.numIdosos),
+      situacao_social: form.situacaoSocial,
+    };
+
     if (editingId) {
-      setFamilias(prev => prev.map(f => f.id === editingId ? {
-        ...f, ...form, numMoradores: Number(form.numMoradores),
-        numCriancas: Number(form.numCriancas), numIdosos: Number(form.numIdosos),
-      } : f));
+      const { error } = await supabase.from('familias').update(payload).eq('id', editingId);
+      if (error) { toast.error('Erro ao atualizar: ' + error.message); setSubmitting(false); return; }
       toast.success('Família atualizada com sucesso!');
     } else {
-      const nova: Familia = {
-        id: String(Date.now()), ...form,
-        numMoradores: Number(form.numMoradores),
-        numCriancas: Number(form.numCriancas),
-        numIdosos: Number(form.numIdosos),
-        criadoEm: new Date().toISOString().split('T')[0],
-      };
-      setFamilias(prev => [nova, ...prev]);
+      const { error } = await supabase.from('familias').insert(payload);
+      if (error) { toast.error('Erro ao cadastrar: ' + error.message); setSubmitting(false); return; }
       toast.success('Família cadastrada com sucesso!');
     }
     resetForm();
     setOpen(false);
+    setSubmitting(false);
+    fetchFamilias();
   };
 
-  const handleDelete = (id: string) => {
-    setFamilias(prev => prev.filter(f => f.id !== id));
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('familias').delete().eq('id', id);
+    if (error) { toast.error('Erro ao excluir: ' + error.message); return; }
     toast.success('Família removida com sucesso!');
+    fetchFamilias();
   };
 
   const situacaoStyle = (s: string) => {
@@ -81,9 +100,10 @@ const FamiliasPage = () => {
     return 'bg-success/10 text-success';
   };
 
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Gestão de Famílias</h1>
@@ -107,25 +127,25 @@ const FamiliasPage = () => {
                 <Input required placeholder="000.000.000-00" value={form.cpf} onChange={e => setForm({ ...form, cpf: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>Telefone</Label>
-                <Input placeholder="(82) 99999-0000" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} />
+                <Label>Telefone *</Label>
+                <Input required placeholder="(82) 99999-0000" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>Endereço</Label>
-                <Input value={form.endereco} onChange={e => setForm({ ...form, endereco: e.target.value })} />
+                <Label>Endereço *</Label>
+                <Input required value={form.endereco} onChange={e => setForm({ ...form, endereco: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>Bairro</Label>
+                <Label>Bairro *</Label>
                 <Select value={form.bairro} onValueChange={v => setForm({ ...form, bairro: v, comunidade: '' })}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{bairrosMock.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+                  <SelectContent>{bairrosList.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Comunidade</Label>
                 <Select value={form.comunidade} onValueChange={v => setForm({ ...form, comunidade: v })} disabled={!form.bairro}>
                   <SelectTrigger><SelectValue placeholder="Selecione o bairro primeiro" /></SelectTrigger>
-                  <SelectContent>{(comunidadesMock[form.bairro] || []).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{(comunidadesMap[form.bairro] || []).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
@@ -149,14 +169,16 @@ const FamiliasPage = () => {
               </div>
               <div className="md:col-span-2 flex justify-end gap-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancelar</Button>
-                <Button type="submit">{editingId ? 'Salvar' : 'Cadastrar'}</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  {editingId ? 'Salvar' : 'Cadastrar'}
+                </Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -166,12 +188,11 @@ const FamiliasPage = () => {
           <SelectTrigger className="w-full sm:w-[200px]"><SelectValue placeholder="Filtrar por bairro" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os bairros</SelectItem>
-            {bairrosMock.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+            {bairrosList.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      {/* Table */}
       <div className="glass-card rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -193,10 +214,10 @@ const FamiliasPage = () => {
                   <td className="p-4 font-medium text-foreground">{f.responsavel}</td>
                   <td className="p-4 text-muted-foreground">{f.cpf}</td>
                   <td className="p-4 text-muted-foreground hidden md:table-cell">{f.bairro}</td>
-                  <td className="p-4 text-muted-foreground hidden lg:table-cell">{f.numMoradores}</td>
+                  <td className="p-4 text-muted-foreground hidden lg:table-cell">{f.num_moradores}</td>
                   <td className="p-4">
-                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${situacaoStyle(f.situacaoSocial)}`}>
-                      {f.situacaoSocial}
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${situacaoStyle(f.situacao_social)}`}>
+                      {f.situacao_social}
                     </span>
                   </td>
                   <td className="p-4 text-right">
@@ -219,12 +240,9 @@ const FamiliasPage = () => {
         </div>
       </div>
 
-      {/* Detail Dialog */}
       <Dialog open={!!detailFamily} onOpenChange={() => setDetailFamily(null)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Prontuário da Família</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Prontuário da Família</DialogTitle></DialogHeader>
           {detailFamily && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
@@ -233,11 +251,10 @@ const FamiliasPage = () => {
                 <div><span className="text-muted-foreground">Telefone:</span><p className="font-medium">{detailFamily.telefone || '—'}</p></div>
                 <div><span className="text-muted-foreground">Bairro:</span><p className="font-medium">{detailFamily.bairro}</p></div>
                 <div><span className="text-muted-foreground">Comunidade:</span><p className="font-medium">{detailFamily.comunidade || '—'}</p></div>
-                <div><span className="text-muted-foreground">Moradores:</span><p className="font-medium">{detailFamily.numMoradores} (Crianças: {detailFamily.numCriancas}, Idosos: {detailFamily.numIdosos})</p></div>
+                <div><span className="text-muted-foreground">Moradores:</span><p className="font-medium">{detailFamily.num_moradores} (Crianças: {detailFamily.num_criancas}, Idosos: {detailFamily.num_idosos})</p></div>
                 <div className="col-span-2"><span className="text-muted-foreground">Endereço:</span><p className="font-medium">{detailFamily.endereco || '—'}</p></div>
-                <div className="col-span-2"><span className="text-muted-foreground">Situação Social:</span><p className="font-medium">{detailFamily.situacaoSocial}</p></div>
+                <div className="col-span-2"><span className="text-muted-foreground">Situação Social:</span><p className="font-medium">{detailFamily.situacao_social}</p></div>
               </div>
-              <p className="text-xs text-muted-foreground pt-2">* Histórico de atendimentos, cestas e grupos disponível após integração com banco de dados.</p>
             </div>
           )}
         </DialogContent>

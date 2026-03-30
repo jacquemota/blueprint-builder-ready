@@ -1,48 +1,98 @@
-import { useState, useMemo } from 'react';
-import { atividadesMock, participantesMock, familiasMock, funcionariosMock, tiposAtividade } from '@/data/mockData';
+import { useState, useMemo, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { tiposAtividade } from '@/types';
+import type { Familia, Profile } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Atividade } from '@/types';
+
+interface AtividadeWithCount {
+  id: string;
+  nome: string;
+  data_atividade: string;
+  responsavel_id: string | null;
+  descricao: string | null;
+  created_at: string;
+  participantes_count: number;
+}
 
 const GruposPage = () => {
-  const [atividades, setAtividades] = useState<Atividade[]>(atividadesMock);
+  const [atividades, setAtividades] = useState<AtividadeWithCount[]>([]);
+  const [familias, setFamilias] = useState<Familia[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ nomeAtividade: '', dataAtividade: '', responsavelId: '', familiaId: '', nomeParticipante: '' });
 
-  const getFuncNome = (id: string) => funcionariosMock.find(f => f.id === id)?.nome ?? id;
-  const getParticipantes = (atividadeId: string) => participantesMock.filter(p => p.atividadeId === atividadeId).length;
+  const fetchData = async () => {
+    const [atRes, famRes, profRes] = await Promise.all([
+      supabase.from('atividades').select('*, participantes_atividade(count)').order('data_atividade', { ascending: false }),
+      supabase.from('familias').select('id, responsavel'),
+      supabase.from('profiles').select('user_id, nome'),
+    ]);
+    const mapped = (atRes.data || []).map((a: any) => ({
+      ...a,
+      participantes_count: a.participantes_atividade?.[0]?.count || 0,
+    }));
+    setAtividades(mapped);
+    setFamilias(famRes.data as Familia[] || []);
+    setProfiles(profRes.data as Profile[] || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const getProfNome = (id: string | null) => {
+    if (!id) return '—';
+    return profiles.find(p => p.user_id === id)?.nome ?? id;
+  };
 
   const filtered = useMemo(() => {
-    return atividades.filter(a => {
-      return !search || a.nomeAtividade.toLowerCase().includes(search.toLowerCase());
-    });
+    return atividades.filter(a => !search || a.nome.toLowerCase().includes(search.toLowerCase()));
   }, [atividades, search]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const nova: Atividade = {
-      id: String(Date.now()),
-      nomeAtividade: form.nomeAtividade,
-      dataAtividade: form.dataAtividade,
-      responsavelId: form.responsavelId,
-      criadoEm: new Date().toISOString().split('T')[0],
-    };
-    setAtividades(prev => [nova, ...prev]);
+    setSubmitting(true);
+    
+    const { data: atividade, error } = await supabase.from('atividades').insert({
+      nome: form.nomeAtividade,
+      data_atividade: form.dataAtividade,
+      responsavel_id: form.responsavelId || null,
+    }).select().single();
+
+    if (error) { toast.error('Erro: ' + error.message); setSubmitting(false); return; }
+
+    // Add participant if provided
+    if (form.nomeParticipante && atividade) {
+      await supabase.from('participantes_atividade').insert({
+        atividade_id: atividade.id,
+        familia_id: form.familiaId || null,
+        nome_participante: form.nomeParticipante,
+      });
+    }
+
+    toast.success('Atividade registrada com sucesso!');
     setForm({ nomeAtividade: '', dataAtividade: '', responsavelId: '', familiaId: '', nomeParticipante: '' });
     setOpen(false);
-    toast.success('Atividade registrada com sucesso!');
+    setSubmitting(false);
+    fetchData();
   };
 
-  const handleDelete = (id: string) => {
-    setAtividades(prev => prev.filter(a => a.id !== id));
-    toast.success('Atividade removida com sucesso!');
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('atividades').delete().eq('id', id);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    toast.success('Atividade removida!');
+    fetchData();
   };
+
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
     <div className="space-y-6">
@@ -73,14 +123,14 @@ const GruposPage = () => {
                 <Label>Responsável</Label>
                 <Select value={form.responsavelId} onValueChange={v => setForm({ ...form, responsavelId: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{funcionariosMock.filter(f => f.ativo).map(f => <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>)}</SelectContent>
+                  <SelectContent>{profiles.map(p => <SelectItem key={p.user_id} value={p.user_id}>{p.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Família do Participante (opcional)</Label>
                 <Select value={form.familiaId} onValueChange={v => setForm({ ...form, familiaId: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{familiasMock.map(f => <SelectItem key={f.id} value={f.id}>{f.responsavel}</SelectItem>)}</SelectContent>
+                  <SelectContent>{familias.map(f => <SelectItem key={f.id} value={f.id}>{f.responsavel}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
@@ -89,20 +139,21 @@ const GruposPage = () => {
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-                <Button type="submit">Registrar</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Registrar
+                </Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Filters */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input placeholder="Buscar por atividade..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {/* Table */}
       <div className="glass-card rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -120,12 +171,12 @@ const GruposPage = () => {
                 <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhuma atividade encontrada.</td></tr>
               ) : filtered.map(a => (
                 <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                  <td className="p-4 font-medium text-foreground">{a.nomeAtividade}</td>
-                  <td className="p-4 text-muted-foreground">{a.dataAtividade}</td>
-                  <td className="p-4 text-muted-foreground hidden md:table-cell">{getFuncNome(a.responsavelId)}</td>
+                  <td className="p-4 font-medium text-foreground">{a.nome}</td>
+                  <td className="p-4 text-muted-foreground">{a.data_atividade}</td>
+                  <td className="p-4 text-muted-foreground hidden md:table-cell">{getProfNome(a.responsavel_id)}</td>
                   <td className="p-4">
                     <span className="inline-flex items-center rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
-                      {getParticipantes(a.id)} participantes
+                      {a.participantes_count} participantes
                     </span>
                   </td>
                   <td className="p-4 text-right">
