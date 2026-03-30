@@ -1,50 +1,95 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import type { AuthUser } from '@/types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import type { AuthUser, AppRole } from '@/types';
+import type { Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: AuthUser | null;
+  session: Session | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  userRole: AppRole | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock credentials — TODO: Replace with real API call
-const MOCK_USERS: (AuthUser & { senha: string })[] = [
-  { id: '1', nome: 'Ana Carolina Silva', email: 'admin@maisquesocial.org', cargo: 'Administrador', senha: 'admin123' },
-  { id: '2', nome: 'Carlos Eduardo Santos', email: 'func@maisquesocial.org', cargo: 'Funcionário', senha: 'func123' },
-];
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    const stored = localStorage.getItem('mqs_user');
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    // TODO: Replace with real API call
-    await new Promise(r => setTimeout(r, 500));
-    const found = MOCK_USERS.find(u => u.email === email && u.senha === password);
-    if (found) {
-      const { senha: _, ...userData } = found;
-      setUser(userData);
-      localStorage.setItem('mqs_user', JSON.stringify(userData));
-      return true;
-    }
-    return false;
+  const fetchUserProfile = useCallback(async (userId: string, email: string) => {
+    // Fetch profile
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('nome')
+      .eq('user_id', userId)
+      .single();
+
+    // Fetch role
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .single();
+
+    const role = (roleData?.role as AppRole) || 'consulta';
+    
+    setUser({
+      id: userId,
+      nome: profile?.nome || email.split('@')[0],
+      email,
+      role,
+    });
   }, []);
 
-  const logout = useCallback(() => {
+  useEffect(() => {
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      setSession(newSession);
+      if (newSession?.user) {
+        // Use setTimeout to avoid Supabase auth deadlock
+        setTimeout(() => {
+          fetchUserProfile(newSession.user.id, newSession.user.email || '');
+        }, 0);
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
+      setSession(existingSession);
+      if (existingSession?.user) {
+        fetchUserProfile(existingSession.user.id, existingSession.user.email || '');
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [fetchUserProfile]);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  }, []);
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('mqs_user');
+    setSession(null);
   }, []);
 
-  const isAdmin = user?.cargo === 'Administrador';
+  const isAdmin = user?.role === 'admin';
+  const userRole = user?.role || null;
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isAdmin, login, logout }}>
+    <AuthContext.Provider value={{ user, session, isAuthenticated: !!session, isAdmin, userRole, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

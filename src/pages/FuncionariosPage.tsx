@@ -1,74 +1,104 @@
-import { useState, useMemo } from 'react';
-import { funcionariosMock } from '@/data/mockData';
+import { useState, useMemo, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { roleLabels } from '@/types';
+import type { Profile, AppRole } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Trash2, Edit } from 'lucide-react';
+import { Plus, Search, Trash2, Edit, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Funcionario } from '@/types';
+import { Constants } from '@/integrations/supabase/types';
+
+interface ProfileWithRole extends Profile {
+  role: AppRole;
+}
 
 const FuncionariosPage = () => {
-  const [funcionarios, setFuncionarios] = useState<Funcionario[]>(funcionariosMock);
+  const [profiles, setProfiles] = useState<ProfileWithRole[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ nome: '', email: '', cargo: '' as string });
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({ nome: '', email: '', role: '' as string });
 
-  const filtered = useMemo(() => {
-    return funcionarios.filter(f => {
-      return !search || f.nome.toLowerCase().includes(search.toLowerCase()) || f.email.toLowerCase().includes(search.toLowerCase());
-    });
-  }, [funcionarios, search]);
-
-  const resetForm = () => {
-    setForm({ nome: '', email: '', cargo: '' });
-    setEditingId(null);
+  const fetchProfiles = async () => {
+    const { data: profilesData } = await supabase.from('profiles').select('*');
+    const { data: rolesData } = await supabase.from('user_roles').select('*');
+    
+    const merged = (profilesData || []).map(p => ({
+      ...p,
+      role: (rolesData?.find(r => r.user_id === p.user_id)?.role || 'consulta') as AppRole,
+    }));
+    setProfiles(merged);
+    setLoading(false);
   };
 
-  const openEdit = (f: Funcionario) => {
-    setForm({ nome: f.nome, email: f.email, cargo: f.cargo });
-    setEditingId(f.id);
+  useEffect(() => { fetchProfiles(); }, []);
+
+  const filtered = useMemo(() => {
+    return profiles.filter(f => !search || f.nome.toLowerCase().includes(search.toLowerCase()) || f.email.toLowerCase().includes(search.toLowerCase()));
+  }, [profiles, search]);
+
+  const resetForm = () => { setForm({ nome: '', email: '', role: '' }); setEditingId(null); };
+
+  const openEdit = (p: ProfileWithRole) => {
+    setForm({ nome: p.nome, email: p.email, role: p.role });
+    setEditingId(p.user_id);
     setOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingId) {
-      setFuncionarios(prev => prev.map(f => f.id === editingId ? { ...f, nome: form.nome, email: form.email, cargo: form.cargo as Funcionario['cargo'] } : f));
-      toast.success('Funcionário atualizado com sucesso!');
-    } else {
-      const novo: Funcionario = {
-        id: String(Date.now()),
-        nome: form.nome,
-        email: form.email,
-        cargo: form.cargo as Funcionario['cargo'],
-        ativo: true,
-        criadoEm: new Date().toISOString().split('T')[0],
-      };
-      setFuncionarios(prev => [novo, ...prev]);
-      toast.success('Funcionário cadastrado com sucesso!');
+    if (!editingId) {
+      toast.error('Para criar novos usuários, use o cadastro via autenticação.');
+      return;
     }
+    setSubmitting(true);
+
+    // Update profile
+    const { error: profileError } = await supabase.from('profiles').update({
+      nome: form.nome, email: form.email,
+    }).eq('user_id', editingId);
+
+    if (profileError) { toast.error('Erro: ' + profileError.message); setSubmitting(false); return; }
+
+    // Update role - delete old and insert new
+    if (form.role) {
+      await supabase.from('user_roles').delete().eq('user_id', editingId);
+      await supabase.from('user_roles').insert({ user_id: editingId, role: form.role as AppRole });
+    }
+
+    toast.success('Funcionário atualizado com sucesso!');
     resetForm();
     setOpen(false);
+    setSubmitting(false);
+    fetchProfiles();
   };
 
-  const handleDelete = (id: string) => {
-    setFuncionarios(prev => prev.filter(f => f.id !== id));
-    toast.success('Funcionário removido com sucesso!');
+  const handleToggleAtivo = async (userId: string, ativo: boolean) => {
+    const { error } = await supabase.from('profiles').update({ ativo: !ativo }).eq('user_id', userId);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    toast.success(ativo ? 'Funcionário desativado.' : 'Funcionário reativado.');
+    fetchProfiles();
   };
+
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+  const roles = Constants.public.Enums.app_role;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Gestão de Funcionários</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Cadastre e gerencie os funcionários da ONG</p>
+          <p className="mt-1 text-sm text-muted-foreground">Gerencie os funcionários e seus perfis de acesso</p>
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="h-4 w-4" /> Novo Funcionário</Button>
+            <Button className="gap-2" disabled><Plus className="h-4 w-4" /> Novo (via Auth)</Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader><DialogTitle>{editingId ? 'Editar Funcionário' : 'Cadastrar Funcionário'}</DialogTitle></DialogHeader>
@@ -78,35 +108,35 @@ const FuncionariosPage = () => {
                 <Input required value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>E-mail *</Label>
-                <Input type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                <Label>E-mail</Label>
+                <Input type="email" value={form.email} disabled />
               </div>
               <div className="space-y-2">
-                <Label>Cargo *</Label>
-                <Select required value={form.cargo} onValueChange={v => setForm({ ...form, cargo: v })}>
+                <Label>Perfil de Acesso *</Label>
+                <Select required value={form.role} onValueChange={v => setForm({ ...form, role: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Administrador">Administrador</SelectItem>
-                    <SelectItem value="Funcionário">Funcionário</SelectItem>
+                    {roles.map(r => <SelectItem key={r} value={r}>{roleLabels[r]}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <Button type="button" variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancelar</Button>
-                <Button type="submit">{editingId ? 'Salvar' : 'Cadastrar'}</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Salvar
+                </Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Filters */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input placeholder="Buscar por nome ou e-mail..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {/* Table */}
       <div className="glass-card rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -114,7 +144,7 @@ const FuncionariosPage = () => {
               <tr className="border-b border-border bg-muted/50">
                 <th className="text-left p-4 font-medium text-muted-foreground">Nome</th>
                 <th className="text-left p-4 font-medium text-muted-foreground hidden md:table-cell">E-mail</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Cargo</th>
+                <th className="text-left p-4 font-medium text-muted-foreground">Perfil</th>
                 <th className="text-left p-4 font-medium text-muted-foreground">Status</th>
                 <th className="text-right p-4 font-medium text-muted-foreground">Ações</th>
               </tr>
@@ -128,23 +158,18 @@ const FuncionariosPage = () => {
                   <td className="p-4 text-muted-foreground hidden md:table-cell">{f.email}</td>
                   <td className="p-4">
                     <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                      {f.cargo}
+                      {roleLabels[f.role]}
                     </span>
                   </td>
                   <td className="p-4">
-                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${f.ativo ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
+                    <button onClick={() => handleToggleAtivo(f.user_id, f.ativo)} className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer ${f.ativo ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
                       {f.ativo ? 'Ativo' : 'Inativo'}
-                    </span>
+                    </button>
                   </td>
                   <td className="p-4 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button onClick={() => openEdit(f)} className="p-2 hover:bg-muted rounded-lg transition-colors">
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                      <button onClick={() => handleDelete(f.id)} className="p-2 hover:bg-destructive/10 rounded-lg transition-colors">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </button>
-                    </div>
+                    <button onClick={() => openEdit(f)} className="p-2 hover:bg-muted rounded-lg transition-colors">
+                      <Edit className="h-4 w-4 text-muted-foreground" />
+                    </button>
                   </td>
                 </tr>
               ))}
