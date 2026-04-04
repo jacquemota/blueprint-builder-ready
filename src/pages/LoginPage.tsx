@@ -18,13 +18,13 @@ const LoginPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const success = await login(email, password);
+    const result = await login(email, password);
     setLoading(false);
-    if (success) {
+    if (result.success) {
       toast.success('Login realizado com sucesso!');
       navigate('/dashboard');
     } else {
-      toast.error('E-mail ou senha inválidos.');
+      toast.error(result.error || 'E-mail ou senha inválidos.');
     }
   };
 
