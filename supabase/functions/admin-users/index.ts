@@ -1,5 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2.95.0/cors";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -7,7 +11,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate caller is admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Não autorizado" }), {
@@ -19,7 +22,6 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Verify caller with anon client
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -31,7 +33,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check admin role
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const { data: roleData } = await adminClient
       .from("user_roles")
@@ -59,7 +60,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Create user via admin API
       const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
         email,
         password,
@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Update role if not default
+      // Update role if not default 'consulta'
       if (role && role !== "consulta" && newUser.user) {
         await adminClient
           .from("user_roles")
@@ -103,7 +103,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Delete from profiles and roles first (cascade should handle, but be safe)
       await adminClient.from("user_roles").delete().eq("user_id", user_id);
       await adminClient.from("profiles").delete().eq("user_id", user_id);
 
