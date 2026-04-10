@@ -19,6 +19,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Plus, Search, Trash2, Edit, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Constants } from "@/integrations/supabase/types";
@@ -34,7 +44,13 @@ const FuncionariosPage = () => {
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ nome: "", email: "", role: "" as string });
+  const [deleteTarget, setDeleteTarget] = useState<ProfileWithRole | null>(null);
+  const [form, setForm] = useState({
+    nome: "",
+    email: "",
+    password: "",
+    role: "" as string,
+  });
 
   const fetchProfiles = async () => {
     const { data: profilesData } = await supabase.from("profiles").select("*");
@@ -63,53 +79,92 @@ const FuncionariosPage = () => {
   }, [profiles, search]);
 
   const resetForm = () => {
-    setForm({ nome: "", email: "", role: "" });
+    setForm({ nome: "", email: "", password: "", role: "" });
     setEditingId(null);
   };
 
   const openEdit = (p: ProfileWithRole) => {
-    setForm({ nome: p.nome, email: p.email, role: p.role });
+    setForm({ nome: p.nome, email: p.email, password: "", role: p.role });
     setEditingId(p.user_id);
     setOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingId) {
-      toast.error(
-        "Para criar novos usuários, use o cadastro via autenticação.",
-      );
-      return;
-    }
     setSubmitting(true);
 
-    // Update profile
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .update({
-        nome: form.nome,
-        email: form.email,
-      })
-      .eq("user_id", editingId);
-
-    if (profileError) {
-      toast.error("Erro: " + profileError.message);
-      setSubmitting(false);
-      return;
-    }
-
-    // Update role - delete old and insert new
-    if (form.role) {
-      await supabase
-        .from("user_roles")
-        .update({ user_id: editingId, role: form.role as AppRole })
+    if (editingId) {
+      // Update profile
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ nome: form.nome, email: form.email })
         .eq("user_id", editingId);
+
+      if (profileError) {
+        toast.error("Erro: " + profileError.message);
+        setSubmitting(false);
+        return;
+      }
+
+      if (form.role) {
+        await supabase
+          .from("user_roles")
+          .update({ role: form.role as AppRole })
+          .eq("user_id", editingId);
+      }
+
+      toast.success("Funcionário atualizado com sucesso!");
+    } else {
+      // Create new user via edge function
+      if (!form.email || !form.password || !form.nome || !form.role) {
+        toast.error("Preencha todos os campos obrigatórios.");
+        setSubmitting(false);
+        return;
+      }
+
+      if (form.password.length < 6) {
+        toast.error("A senha deve ter pelo menos 6 caracteres.");
+        setSubmitting(false);
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("admin-users", {
+        body: {
+          action: "create",
+          email: form.email,
+          password: form.password,
+          nome: form.nome,
+          role: form.role,
+        },
+      });
+
+      if (error || data?.error) {
+        toast.error("Erro: " + (data?.error || error?.message));
+        setSubmitting(false);
+        return;
+      }
+
+      toast.success("Funcionário cadastrado com sucesso!");
     }
 
-    toast.success("Funcionário atualizado com sucesso!");
     resetForm();
     setOpen(false);
     setSubmitting(false);
+    fetchProfiles();
+  };
+
+  const handleDelete = async (profile: ProfileWithRole) => {
+    const { data, error } = await supabase.functions.invoke("admin-users", {
+      body: { action: "delete", user_id: profile.user_id },
+    });
+
+    if (error || data?.error) {
+      toast.error("Erro: " + (data?.error || error?.message));
+      return;
+    }
+
+    toast.success("Funcionário excluído com sucesso!");
+    setDeleteTarget(null);
     fetchProfiles();
   };
 
@@ -154,8 +209,8 @@ const FuncionariosPage = () => {
           }}
         >
           <DialogTrigger asChild>
-            <Button className="gap-2" disabled>
-              <Plus className="h-4 w-4" /> Novo (via Auth)
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" /> Novo Funcionário
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
@@ -174,9 +229,30 @@ const FuncionariosPage = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>E-mail</Label>
-                <Input type="email" value={form.email} disabled />
+                <Label>E-mail *</Label>
+                <Input
+                  type="email"
+                  required
+                  value={form.email}
+                  disabled={!!editingId}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
               </div>
+              {!editingId && (
+                <div className="space-y-2">
+                  <Label>Senha *</Label>
+                  <Input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="Mínimo 6 caracteres"
+                    value={form.password}
+                    onChange={(e) =>
+                      setForm({ ...form, password: e.target.value })
+                    }
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Perfil de Acesso *</Label>
                 <Select
@@ -211,7 +287,7 @@ const FuncionariosPage = () => {
                   {submitting && (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   )}
-                  Salvar
+                  {editingId ? "Salvar" : "Cadastrar"}
                 </Button>
               </div>
             </form>
@@ -287,12 +363,22 @@ const FuncionariosPage = () => {
                       </button>
                     </td>
                     <td className="p-4 text-right">
-                      <button
-                        onClick={() => openEdit(f)}
-                        className="p-2 hover:bg-muted rounded-lg transition-colors"
-                      >
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </button>
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(f)}
+                          className="p-2 hover:bg-muted rounded-lg transition-colors"
+                          title="Editar"
+                        >
+                          <Edit className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(f)}
+                          className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -301,6 +387,32 @@ const FuncionariosPage = () => {
           </table>
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={() => setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o funcionário{" "}
+              <strong>{deleteTarget?.nome}</strong>? Esta ação não pode ser
+              desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
