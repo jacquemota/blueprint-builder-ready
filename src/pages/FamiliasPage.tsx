@@ -7,8 +7,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, Search, Eye, Trash2, Edit, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  validateNome, validateCPF, validateTelefone, validateEndereco, validateMoradores,
+  formatCPF, formatTelefone, cleanCPF, cleanTelefone, sanitize,
+} from '@/lib/validators';
+
+const FieldError = ({ msg }: { msg?: string }) =>
+  msg ? <p className="text-xs text-destructive mt-1">{msg}</p> : null;
 
 const FamiliasPage = () => {
   const [familias, setFamilias] = useState<Familia[]>([]);
@@ -19,6 +27,8 @@ const FamiliasPage = () => {
   const [detailFamily, setDetailFamily] = useState<Familia | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Familia | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const emptyForm = {
     responsavel: '', cpf: '', telefone: '', endereco: '', bairro: '', comunidade: '',
@@ -37,33 +47,70 @@ const FamiliasPage = () => {
 
   const filtered = useMemo(() => {
     return familias.filter(f => {
-      const matchSearch = !search || f.responsavel.toLowerCase().includes(search.toLowerCase()) || f.cpf.includes(search);
+      const matchSearch = !search || f.responsavel.toLowerCase().includes(search.toLowerCase()) || f.cpf.includes(search.replace(/\D/g, ''));
       const matchBairro = filterBairro === 'all' || f.bairro === filterBairro;
       return matchSearch && matchBairro;
     });
   }, [familias, search, filterBairro]);
 
-  const resetForm = () => { setForm(emptyForm); setEditingId(null); };
+  const resetForm = () => { setForm(emptyForm); setEditingId(null); setErrors({}); };
 
   const openEdit = (f: Familia) => {
     setForm({
-      responsavel: f.responsavel, cpf: f.cpf, telefone: f.telefone, endereco: f.endereco,
-      bairro: f.bairro, comunidade: f.comunidade,
+      responsavel: f.responsavel, cpf: formatCPF(f.cpf), telefone: formatTelefone(f.telefone),
+      endereco: f.endereco, bairro: f.bairro, comunidade: f.comunidade,
       numMoradores: String(f.num_moradores), numCriancas: String(f.num_criancas),
       numIdosos: String(f.num_idosos), situacaoSocial: f.situacao_social,
     });
     setEditingId(f.id);
+    setErrors({});
     setOpen(true);
+  };
+
+  const validateForm = (): boolean => {
+    const errs: Record<string, string> = {};
+
+    const nomeResult = validateNome(form.responsavel);
+    if (!nomeResult.valid) errs.responsavel = nomeResult.error!;
+
+    const cpfResult = validateCPF(form.cpf);
+    if (!cpfResult.valid) errs.cpf = cpfResult.error!;
+
+    // Check CPF uniqueness
+    if (cpfResult.valid) {
+      const cpfClean = cleanCPF(form.cpf);
+      const duplicate = familias.find(f => f.cpf === cpfClean && f.id !== editingId);
+      if (duplicate) errs.cpf = 'CPF já cadastrado no sistema.';
+    }
+
+    const telResult = validateTelefone(form.telefone);
+    if (!telResult.valid) errs.telefone = telResult.error!;
+
+    const endResult = validateEndereco(form.endereco);
+    if (!endResult.valid) errs.endereco = endResult.error!;
+
+    if (!form.bairro) errs.bairro = 'Bairro é obrigatório.';
+
+    const total = Number(form.numMoradores);
+    const criancas = Number(form.numCriancas);
+    const idosos = Number(form.numIdosos);
+    const morResult = validateMoradores(total, criancas, idosos);
+    if (!morResult.valid) errs.moradores = morResult.error!;
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateForm()) return;
+
     setSubmitting(true);
     const payload = {
-      responsavel: form.responsavel.trim(),
-      cpf: form.cpf.trim(),
-      telefone: form.telefone.trim(),
-      endereco: form.endereco.trim(),
+      responsavel: sanitize(form.responsavel),
+      cpf: cleanCPF(form.cpf),
+      telefone: cleanTelefone(form.telefone),
+      endereco: sanitize(form.endereco),
       bairro: form.bairro,
       comunidade: form.comunidade,
       num_moradores: Number(form.numMoradores),
@@ -78,7 +125,15 @@ const FamiliasPage = () => {
       toast.success('Família atualizada com sucesso!');
     } else {
       const { error } = await supabase.from('familias').insert(payload);
-      if (error) { toast.error('Erro ao cadastrar: ' + error.message); setSubmitting(false); return; }
+      if (error) {
+        if (error.message.includes('duplicate') || error.message.includes('unique')) {
+          toast.error('CPF já cadastrado no sistema.');
+        } else {
+          toast.error('Erro ao cadastrar: ' + error.message);
+        }
+        setSubmitting(false);
+        return;
+      }
       toast.success('Família cadastrada com sucesso!');
     }
     resetForm();
@@ -87,10 +142,11 @@ const FamiliasPage = () => {
     fetchFamilias();
   };
 
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('familias').delete().eq('id', id);
+  const handleDelete = async (family: Familia) => {
+    const { error } = await supabase.from('familias').delete().eq('id', family.id);
     if (error) { toast.error('Erro ao excluir: ' + error.message); return; }
     toast.success('Família removida com sucesso!');
+    setDeleteTarget(null);
     fetchFamilias();
   };
 
@@ -120,26 +176,54 @@ const FamiliasPage = () => {
             <form onSubmit={handleSubmit} className="grid gap-4 grid-cols-1 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2">
                 <Label>Nome do Responsável *</Label>
-                <Input required value={form.responsavel} onChange={e => setForm({ ...form, responsavel: e.target.value })} />
+                <Input
+                  value={form.responsavel}
+                  onChange={e => setForm({ ...form, responsavel: e.target.value })}
+                  maxLength={120}
+                  placeholder="Nome e sobrenome"
+                  className={errors.responsavel ? 'border-destructive' : ''}
+                />
+                <FieldError msg={errors.responsavel} />
               </div>
               <div className="space-y-2">
                 <Label>CPF *</Label>
-                <Input required placeholder="000.000.000-00" value={form.cpf} onChange={e => setForm({ ...form, cpf: e.target.value })} />
+                <Input
+                  value={form.cpf}
+                  onChange={e => setForm({ ...form, cpf: formatCPF(e.target.value) })}
+                  placeholder="000.000.000-00"
+                  maxLength={14}
+                  className={errors.cpf ? 'border-destructive' : ''}
+                />
+                <FieldError msg={errors.cpf} />
               </div>
               <div className="space-y-2">
                 <Label>Telefone *</Label>
-                <Input required placeholder="(82) 99999-0000" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} />
+                <Input
+                  value={form.telefone}
+                  onChange={e => setForm({ ...form, telefone: formatTelefone(e.target.value) })}
+                  placeholder="(82) 99999-0000"
+                  maxLength={15}
+                  className={errors.telefone ? 'border-destructive' : ''}
+                />
+                <FieldError msg={errors.telefone} />
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label>Endereço *</Label>
-                <Input required value={form.endereco} onChange={e => setForm({ ...form, endereco: e.target.value })} />
+                <Input
+                  value={form.endereco}
+                  onChange={e => setForm({ ...form, endereco: e.target.value })}
+                  maxLength={200}
+                  className={errors.endereco ? 'border-destructive' : ''}
+                />
+                <FieldError msg={errors.endereco} />
               </div>
               <div className="space-y-2">
                 <Label>Bairro *</Label>
                 <Select value={form.bairro} onValueChange={v => setForm({ ...form, bairro: v, comunidade: '' })}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger className={errors.bairro ? 'border-destructive' : ''}><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>{bairrosList.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
                 </Select>
+                <FieldError msg={errors.bairro} />
               </div>
               <div className="space-y-2">
                 <Label>Comunidade</Label>
@@ -149,7 +233,7 @@ const FamiliasPage = () => {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Nº de Moradores</Label>
+                <Label>Nº de Moradores *</Label>
                 <Input type="number" min={1} value={form.numMoradores} onChange={e => setForm({ ...form, numMoradores: e.target.value })} />
               </div>
               <div className="space-y-2">
@@ -167,6 +251,11 @@ const FamiliasPage = () => {
                   <SelectContent>{situacoesSociais.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              {errors.moradores && (
+                <div className="md:col-span-2">
+                  <FieldError msg={errors.moradores} />
+                </div>
+              )}
               <div className="md:col-span-2 flex justify-end gap-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancelar</Button>
                 <Button type="submit" disabled={submitting}>
@@ -212,7 +301,7 @@ const FamiliasPage = () => {
               ) : filtered.map(f => (
                 <tr key={f.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                   <td className="p-4 font-medium text-foreground">{f.responsavel}</td>
-                  <td className="p-4 text-muted-foreground">{f.cpf}</td>
+                  <td className="p-4 text-muted-foreground">{formatCPF(f.cpf)}</td>
                   <td className="p-4 text-muted-foreground hidden md:table-cell">{f.bairro}</td>
                   <td className="p-4 text-muted-foreground hidden lg:table-cell">{f.num_moradores}</td>
                   <td className="p-4">
@@ -228,7 +317,7 @@ const FamiliasPage = () => {
                       <button onClick={() => openEdit(f)} className="p-2 hover:bg-muted rounded-lg transition-colors" title="Editar">
                         <Edit className="h-4 w-4 text-muted-foreground" />
                       </button>
-                      <button onClick={() => handleDelete(f.id)} className="p-2 hover:bg-destructive/10 rounded-lg transition-colors" title="Excluir">
+                      <button onClick={() => setDeleteTarget(f)} className="p-2 hover:bg-destructive/10 rounded-lg transition-colors" title="Excluir">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </button>
                     </div>
@@ -240,6 +329,28 @@ const FamiliasPage = () => {
         </div>
       </div>
 
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a família de <strong>{deleteTarget?.responsavel}</strong>? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Detail dialog */}
       <Dialog open={!!detailFamily} onOpenChange={() => setDetailFamily(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Prontuário da Família</DialogTitle></DialogHeader>
@@ -247,8 +358,8 @@ const FamiliasPage = () => {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div><span className="text-muted-foreground">Responsável:</span><p className="font-medium">{detailFamily.responsavel}</p></div>
-                <div><span className="text-muted-foreground">CPF:</span><p className="font-medium">{detailFamily.cpf}</p></div>
-                <div><span className="text-muted-foreground">Telefone:</span><p className="font-medium">{detailFamily.telefone || '—'}</p></div>
+                <div><span className="text-muted-foreground">CPF:</span><p className="font-medium">{formatCPF(detailFamily.cpf)}</p></div>
+                <div><span className="text-muted-foreground">Telefone:</span><p className="font-medium">{detailFamily.telefone ? formatTelefone(detailFamily.telefone) : '—'}</p></div>
                 <div><span className="text-muted-foreground">Bairro:</span><p className="font-medium">{detailFamily.bairro}</p></div>
                 <div><span className="text-muted-foreground">Comunidade:</span><p className="font-medium">{detailFamily.comunidade || '—'}</p></div>
                 <div><span className="text-muted-foreground">Moradores:</span><p className="font-medium">{detailFamily.num_moradores} (Crianças: {detailFamily.num_criancas}, Idosos: {detailFamily.num_idosos})</p></div>
