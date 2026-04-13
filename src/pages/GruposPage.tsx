@@ -31,11 +31,24 @@ const GruposPage = () => {
   const [form, setForm] = useState({ nomeAtividade: '', dataAtividade: '', responsavelId: '', familiaId: '', nomeParticipante: '' });
 
   const fetchData = async () => {
+    setLoading(true);
     const [atRes, famRes, profRes] = await Promise.all([
       supabase.from('atividades').select('*, participantes_atividade(count)').order('data_atividade', { ascending: false }),
       supabase.from('familias').select('id, responsavel'),
       supabase.from('profiles').select('user_id, nome'),
     ]);
+
+    if (atRes.error) {
+      console.error('Erro ao buscar atividades:', atRes.error);
+      toast.error('Erro ao carregar atividades: ' + atRes.error.message);
+    }
+    if (famRes.error) {
+      console.error('Erro ao buscar famílias:', famRes.error);
+    }
+    if (profRes.error) {
+      console.error('Erro ao buscar perfis:', profRes.error);
+    }
+
     const mapped = (atRes.data || []).map((a: any) => ({
       ...a,
       participantes_count: a.participantes_atividade?.[0]?.count || 0,
