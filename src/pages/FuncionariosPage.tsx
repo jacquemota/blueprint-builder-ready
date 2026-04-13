@@ -190,7 +190,10 @@ const FuncionariosPage = () => {
                 <Label>Nome Completo *</Label>
                 <Input
                   value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^A-Za-zÀ-ÿ\s'-]/g, '');
+                    setForm({ ...form, nome: val });
+                  }}
                   maxLength={120}
                   placeholder="Nome e sobrenome"
                   className={errors.nome ? 'border-destructive' : ''}
