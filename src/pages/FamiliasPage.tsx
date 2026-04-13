@@ -200,7 +200,16 @@ const FamiliasPage = () => {
                 <Label>Telefone *</Label>
                 <Input
                   value={form.telefone}
-                  onChange={e => setForm({ ...form, telefone: formatTelefone(e.target.value) })}
+                  onChange={e => {
+                    const onlyDigits = e.target.value.replace(/\D/g, '');
+                    setForm({ ...form, telefone: formatTelefone(onlyDigits) });
+                  }}
+                  onKeyDown={e => {
+                    const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Home','End'];
+                    if (allowed.includes(e.key) || e.ctrlKey || e.metaKey) return;
+                    if (!/\d/.test(e.key)) e.preventDefault();
+                  }}
+                  inputMode="numeric"
                   placeholder="(82) 99999-0000"
                   maxLength={15}
                   className={errors.telefone ? 'border-destructive' : ''}
