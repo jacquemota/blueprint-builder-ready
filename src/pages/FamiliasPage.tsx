@@ -178,7 +178,10 @@ const FamiliasPage = () => {
                 <Label>Nome do Responsável *</Label>
                 <Input
                   value={form.responsavel}
-                  onChange={e => setForm({ ...form, responsavel: e.target.value })}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^A-Za-zÀ-ÿ\s'-]/g, '');
+                    setForm({ ...form, responsavel: val });
+                  }}
                   maxLength={120}
                   placeholder="Nome e sobrenome"
                   className={errors.responsavel ? 'border-destructive' : ''}
@@ -189,7 +192,16 @@ const FamiliasPage = () => {
                 <Label>CPF *</Label>
                 <Input
                   value={form.cpf}
-                  onChange={e => setForm({ ...form, cpf: formatCPF(e.target.value) })}
+                  onChange={e => {
+                    const onlyDigits = e.target.value.replace(/\D/g, '');
+                    setForm({ ...form, cpf: formatCPF(onlyDigits) });
+                  }}
+                  onKeyDown={e => {
+                    const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Home','End'];
+                    if (allowed.includes(e.key) || e.ctrlKey || e.metaKey) return;
+                    if (!/\d/.test(e.key)) e.preventDefault();
+                  }}
+                  inputMode="numeric"
                   placeholder="000.000.000-00"
                   maxLength={14}
                   className={errors.cpf ? 'border-destructive' : ''}
